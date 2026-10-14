@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.method.ScrollingMovementMethod
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Switch
