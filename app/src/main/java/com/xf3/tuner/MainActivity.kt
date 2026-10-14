@@ -210,7 +210,7 @@ class MainActivity : AppCompatActivity() {
         val targets = Tweaks.ALL.filter { it.defaultOn }
         log("=== 一键优化 (${targets.size} 项) ===")
 
-        busy = true
+        markBusy()
         executor.execute {
             try {
                 // 1. 备份（仅当备份不存在）
@@ -278,7 +278,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         log("=== 全部还原（从备份）===")
-        busy = true
+        markBusy()
         executor.execute {
             try {
                 val lines = file.readLines()
@@ -334,7 +334,7 @@ class MainActivity : AppCompatActivity() {
         val block = checkEnvironmentBlocking()
         if (block != null) { log("⚠ 已阻止: $block"); return }
 
-        busy = true
+        markBusy()
         executor.execute {
             try {
                 var success = 0
