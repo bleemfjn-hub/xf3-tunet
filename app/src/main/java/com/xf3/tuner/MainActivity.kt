@@ -104,7 +104,9 @@ class MainActivity : AppCompatActivity() {
         buildSwitches()
 
         findViewById<Button>(R.id.btnOptimizeAll).setOnClickListener { applyAll(true) }
-        findViewById<Button>(R.id.btnRevertAll).setOnClickListener { revertAll() }
+        findViewById<Button>(R.id.btnRevertAll).setOnClickListener { confirmRevertAll() }
+        // B5: 日志清空按钮（若布局中存在）
+        findViewById<View?>(R.id.btnClearLog)?.setOnClickListener { logView.text = "" }
 
         checkEnvironment()
     }
@@ -296,6 +298,17 @@ class MainActivity : AppCompatActivity() {
             mainHandler.post { log("回滚异常: ${e.message}") }
             false
         }
+    }
+
+    /** B3: 还原前弹窗确认，防误触。 */
+    private fun confirmRevertAll() {
+        if (isBusyNow()) { log("操作进行中，请稍候"); return }
+        AlertDialog.Builder(this)
+            .setTitle("确认还原")
+            .setMessage("将把所有优化项恢复到备份的原始值，确定继续？")
+            .setPositiveButton("还原") { _, _ -> revertAll() }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // ---------- 真还原 ----------
