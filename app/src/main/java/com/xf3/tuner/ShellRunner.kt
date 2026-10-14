@@ -204,9 +204,54 @@ object ShellRunner {
         if (namespace !in ALLOWED_NAMESPACES) return null
         val res = exec("settings get $namespace $key")
         Log.d("XF3Tuner", "get $namespace/$key -> exit=${res.exitCode} stdout='${res.stdout}' stderr='${res.stderr}'")
-        val v = res.stdout.trim().lines().lastOrNull()?.trim() ?: ""
-        // settings get 对不存在的键返回字符串 "null"
+        return parseGetOutput(res.stdout)
+    }
+
+    /**
+     * 批量读取：把多个键合并成【一条】sh -c 命令，只创建一次 Shizuku 进程。
+     * 用 `@@<index>=` 前缀标记，避免值中换行破坏解析。
+     * 返回：key("namespace/key") -> 值（null 表示不存在）
+     */
+    fun getBatch(keys: List<Pair<String, String>>): Map<String, String?> {
+        if (keys.isEmpty()) return emptyMap()
+        val valid = keys.filter { it.first in ALLOWED_NAMESPACES }
+        if (valid.isEmpty()) return emptyMap()
+
+        val result = mutableMapOf<String, String?>()
+        valid.chunked(BATCH_CHUNK).forEach { chunk ->
+            val cmd = buildString {
+                chunk.forEachIndexed { index, (namespace, key) ->
+                    append("echo \"@@$index=\$(settings get $namespace $key)\"; ")
+                }
+            }
+            val res = exec(cmd)
+            val byIndex = parseMarkedOutput(res.stdout)
+            chunk.forEachIndexed { index, (namespace, key) ->
+                result["$namespace/$key"] = parseGetOutput(byIndex[index] ?: "")
+            }
+        }
+        return result
+    }
+
+    /** 解析 `settings get` 的输出："null" 或空串视为不存在。 */
+    internal fun parseGetOutput(stdout: String): String? {
+        val v = stdout.trim().lines().lastOrNull()?.trim() ?: ""
         return if (v == "null" || v.isEmpty()) null else v
+    }
+
+    /** 解析 `@@<index>=<value>` 标记行。 */
+    internal fun parseMarkedOutput(stdout: String): Map<Int, String> {
+        val byIndex = mutableMapOf<Int, String>()
+        for (line in stdout.lines()) {
+            val t = line.trim()
+            if (!t.startsWith("@@")) continue
+            val body = t.removePrefix("@@")
+            val idx = body.indexOf('=')
+            if (idx <= 0) continue
+            val i = body.substring(0, idx).toIntOrNull() ?: continue
+            byIndex[i] = body.substring(idx + 1)
+        }
+        return byIndex
     }
 
     /** 删除一个 Settings 键。 */
