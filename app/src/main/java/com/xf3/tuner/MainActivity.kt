@@ -521,10 +521,18 @@ class MainActivity : AppCompatActivity() {
     private fun log(msg: String) {
         runOnUiThread {
             logView.append(msg + "\n")
-            // B4: 自动滚到底部
-            (logView.parent as? android.widget.ScrollView)?.post {
-                (logView.parent as? android.widget.ScrollView)?.fullScroll(View.FOCUS_DOWN)
-            }
+            // B4: 自动滚到底部（向上查找根 ScrollView）
+            findRootScrollView()?.post { findRootScrollView()?.fullScroll(View.FOCUS_DOWN) }
         }
+    }
+
+    /** B4: 从 logView 向上查找最近的 ScrollView。 */
+    private fun findRootScrollView(): android.widget.ScrollView? {
+        var p: android.view.ViewParent? = logView.parent
+        while (p != null) {
+            if (p is android.widget.ScrollView) return p
+            p = p.parent
+        }
+        return null
     }
 }
