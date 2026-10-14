@@ -9,6 +9,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import rikka.shizuku.Shizuku
 import java.io.File
@@ -177,7 +178,14 @@ class MainActivity : AppCompatActivity() {
             }
             sw.text = tweak.title + riskTag + "\n" + tweak.desc
             sw.textSize = 14f
-            sw.setTextColor(android.graphics.Color.parseColor("#E6EDF3"))
+            // B6: 按风险等级着色（SAFE 白 / CAUTION 黄 / RISKY 红）
+            sw.setTextColor(
+                when (tweak.risk) {
+                    Risk.SAFE -> android.graphics.Color.parseColor("#E6EDF3")
+                    Risk.CAUTION -> android.graphics.Color.parseColor("#E3B341")
+                    Risk.RISKY -> android.graphics.Color.parseColor("#F85149")
+                }
+            )
             sw.setPadding(0, 24, 0, 24)
             sw.isChecked = false
             sw.isEnabled = false
