@@ -348,14 +348,22 @@ class MainActivity : AppCompatActivity() {
                     offCount == validCount -> 0
                     else -> -1   // 部分生效
                 }
+                val riskTag = when (tweak.risk) {
+                    Risk.SAFE -> ""
+                    Risk.CAUTION -> " [发热↑]"
+                    Risk.RISKY -> " [高风险]"
+                }
+                val label = if (state == -1) {
+                    tweak.title + riskTag + " [部分生效]\n" + tweak.desc
+                } else {
+                    tweak.title + riskTag + "\n" + tweak.desc
+                }
                 mainHandler.post {
                     suppressCallbacks = true
                     val sw = switches[tweak.id]
                     sw?.isEnabled = true
                     sw?.isChecked = state == 1
-                    if (state == -1) {
-                        sw?.text = tweak.title + " [部分生效]\n" + tweak.desc
-                    }
+                    sw?.text = label
                     suppressCallbacks = false
                 }
             }
