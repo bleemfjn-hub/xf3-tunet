@@ -13,7 +13,9 @@ import java.io.InputStreamReader
  * - `content update`      → 被拦截，静默失败（返回 0 但值不变）
  * - `content delete`+`content insert` → 有效
  *
- * 因此所有写操作统一走 delete + insert。
+ * 关键约束：delete / insert / 读回验证必须在【同一个 shell 进程】内连续执行。
+ * 若拆成多次 Shizuku 进程调用，OriginOS 的 SettingsProvider 会因事务隔离导致写入丢失。
+ * 因此 put() 把三步合并为一条 sh -c 命令。
  *
  * Shizuku.newProcess 在 13.x 中为 @RestrictTo 私有方法，
  * 这里通过反射调用，避免编译期可见性问题。
@@ -50,21 +52,20 @@ object ShellRunner {
 
     /**
      * 写入一个 Settings 键。
-     * 策略：先 delete（忽略结果），再 insert。
-     * 写入后用 settings get 读回验证，只有读回值与目标一致才算成功。
+     * 策略：在【同一个 shell 进程】内执行 delete → insert → 读回验证。
+     * 用 `;` 串联，保证顺序执行；读回值用 marker 包裹便于解析。
      */
     fun put(namespace: String, key: String, value: String): Result {
         val uri = "content://settings/$namespace"
-        // 1. 删除旧值（键不存在时静默失败，无所谓）
-        exec("content delete --uri $uri --where \"name='$key'\"")
-        // 2. 插入新值
-        val insertRes = exec(
-            "content insert --uri $uri --bind name:s:$key --bind value:s:$value"
-        )
-        // 3. 读回验证
-        val readBack = get(namespace, key)
+        val cmd = buildString {
+            append("content delete --uri $uri --where \"name='$key'\" 2>/dev/null; ")
+            append("content insert --uri $uri --bind name:s:$key --bind value:s:$value 2>/dev/null; ")
+            append("settings get $namespace $key")
+        }
+        val res = exec(cmd)
+        val readBack = res.output.trim().lines().lastOrNull()?.trim() ?: ""
         val ok = readBack == value
-        return Result(ok, "insert=${insertRes.output.trim()} readBack=$readBack")
+        return Result(ok, "readBack=$readBack")
     }
 
     /** 读取一个 Settings 键的当前值。 */
