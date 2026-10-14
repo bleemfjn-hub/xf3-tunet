@@ -158,7 +158,15 @@ class MainActivity : AppCompatActivity() {
             sw.isEnabled = false
             sw.setOnCheckedChangeListener { _, isChecked ->
                 if (suppressCallbacks) return@setOnCheckedChangeListener
+                // A3: 若当前处于「部分生效」，点击时强制重写为完整的目标状态
                 applyTweak(tweak, isChecked)
+            }
+            // A3: 长按可强制修复「部分生效」状态
+            sw.setOnLongClickListener {
+                if (busy) { log("操作进行中，请稍候"); return@setOnLongClickListener true }
+                log("强制修复：${tweak.title}")
+                applyTweak(tweak, true)
+                true
             }
             container.addView(sw)
             switches[tweak.id] = sw
@@ -313,7 +321,8 @@ class MainActivity : AppCompatActivity() {
                     val res = ShellRunner.put(w.namespace, w.key, value)
                     if (res.ok) success++
                 }
-                val line = "${tweak.title}: ${if (on) "开启" else "关闭"} ($success/${tweak.writes.size})"
+                val expected = tweak.writes.count { val v = if (on) it.onValue else it.offValue; v.isNotEmpty() }
+                val line = "${tweak.title}: ${if (on) "开启" else "关闭"} ($success/$expected)"
                 mainHandler.post { log(line) }
             } finally {
                 busy = false
