@@ -182,7 +182,7 @@ class MainActivity : AppCompatActivity() {
                 mainHandler.post { log("=== 完成 ($totalOk/$total) ===") }
             } finally {
                 busy = false
-                refreshAllStates()
+                refreshAllStatesInternal()
             }
         }
     }
@@ -249,7 +249,7 @@ class MainActivity : AppCompatActivity() {
                 mainHandler.post { log("=== 还原完成 ===") }
             } finally {
                 busy = false
-                refreshAllStates()
+                refreshAllStatesInternal()
             }
         }
     }
@@ -275,7 +275,7 @@ class MainActivity : AppCompatActivity() {
                 mainHandler.post { log(line) }
             } finally {
                 busy = false
-                refreshAllStates()
+                refreshAllStatesInternal()
             }
         }
     }
