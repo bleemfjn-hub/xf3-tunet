@@ -323,7 +323,12 @@ class MainActivity : AppCompatActivity() {
      * - 其他 → 关闭并标注（部分生效）
      */
     private fun refreshAllStates() {
-        executor.execute {
+        executor.execute { refreshAllStatesInternal() }
+    }
+
+    /** 实际刷新逻辑。只能从 executor 线程内调用，禁止再向 executor 提交任务（会死锁）。 */
+    private fun refreshAllStatesInternal() {
+        run {
             for (tweak in Tweaks.ALL) {
                 var onCount = 0
                 var offCount = 0
