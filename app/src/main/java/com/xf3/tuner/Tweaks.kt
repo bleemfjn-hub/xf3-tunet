@@ -30,7 +30,9 @@ object Tweaks {
             title = "锁定 120Hz 刷新率",
             desc = "强制高刷，滑动更跟手",
             writes = listOf(
-                KeyWrite("secure", "refresh_rate_mode", "120", "60")
+                KeyWrite("secure", "refresh_rate_mode", "120", "60"),
+                KeyWrite("global", "peak_refresh_rate", "120", "60"),
+                KeyWrite("global", "min_refresh_rate", "120", "60")
             )
         ),
         Tweak(
@@ -75,6 +77,32 @@ object Tweaks {
                 KeyWrite("global", "animator_duration_scale", "0.5", "1.0"),
                 KeyWrite("global", "transition_animation_scale", "0.5", "1.0"),
                 KeyWrite("global", "window_animation_scale", "0.5", "1.0")
+            )
+        ),
+        Tweak(
+            id = "smarttouch",
+            title = "智能触控增强",
+            desc = "开启 BBK 智能触控与分体手势滚动",
+            writes = listOf(
+                KeyWrite("system", "bbk_smart_touch_setting", "1", "0"),
+                KeyWrite("system", "bbk_touch_settings", "1", "0"),
+                KeyWrite("system", "bbk_seperate_hand_touch_scroll_setting", "1", "0")
+            )
+        ),
+        Tweak(
+            id = "chargebalance",
+            title = "均衡充电 (护电池)",
+            desc = "降低充电功率，延长电池寿命",
+            writes = listOf(
+                KeyWrite("system", "balance_charge_switch", "1", "0")
+            )
+        ),
+        Tweak(
+            id = "ambientwake",
+            title = "息屏触摸唤醒",
+            desc = "息屏时轻触屏幕即可唤醒（关闭省电）",
+            writes = listOf(
+                KeyWrite("global", "ambient_touch_to_wake", "1", "0")
             )
         ),
         Tweak(
