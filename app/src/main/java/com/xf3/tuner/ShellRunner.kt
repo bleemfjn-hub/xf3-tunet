@@ -1,6 +1,7 @@
 package com.xf3.tuner
 
 import android.os.Build
+import android.util.Log
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -102,6 +103,7 @@ object ShellRunner {
                 false
             )
         } catch (e: Exception) {
+            Log.e("XF3Tuner", "exec failed: cmd=$cmd", e)
             try { process?.destroyForcibly() } catch (_: Exception) { }
             return ExecResult(-1, "", e.message ?: "unknown error", false)
         }
@@ -175,6 +177,7 @@ object ShellRunner {
     fun get(namespace: String, key: String): String? {
         if (namespace !in ALLOWED_NAMESPACES) return null
         val res = exec("settings get $namespace $key")
+        Log.d("XF3Tuner", "get $namespace/$key -> exit=${res.exitCode} stdout='${res.stdout}' stderr='${res.stderr}'")
         val v = res.stdout.trim().lines().lastOrNull()?.trim() ?: ""
         // settings get 对不存在的键返回字符串 "null"
         return if (v == "null" || v.isEmpty()) null else v
