@@ -184,6 +184,8 @@ class MainActivity : AppCompatActivity() {
                 mainHandler.post { log("=== 完成 ($totalOk/$total) ===") }
             } finally {
                 busy = false
+                // Settings 缓存需要短暂时间落盘，延迟后再读回，避免读到旧值
+                try { Thread.sleep(500) } catch (_: InterruptedException) { }
                 refreshAllStatesInternal()
             }
         }
@@ -339,8 +341,12 @@ class MainActivity : AppCompatActivity() {
                     val current = ShellRunner.get(w.namespace, w.key)
                     validCount++
                     if (current == w.onValue) onCount++
-                    // offValue 为空的键（如 sys_uidcpupower）不参与 off 判定
-                    if (w.offValue.isNotEmpty() && current == w.offValue) offCount++
+                    // 键不存在（null）视为「关」；offValue 为空的键不参与 off 判定
+                    if (current == null) {
+                        offCount++
+                    } else if (w.offValue.isNotEmpty() && current == w.offValue) {
+                        offCount++
+                    }
                 }
                 val state = when {
                     validCount == 0 -> 0
