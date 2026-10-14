@@ -107,7 +107,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnOptimizeAll).setOnClickListener { applyAll(true) }
         findViewById<Button>(R.id.btnRevertAll).setOnClickListener { confirmRevertAll() }
         // B5: 日志清空按钮（若布局中存在）
-        findViewById<View?>(R.id.btnClearLog)?.setOnClickListener { logView.text = "" }
+        findViewById<View>(R.id.btnClearLog)?.setOnClickListener { logView.text = "" }
 
         checkEnvironment()
     }
