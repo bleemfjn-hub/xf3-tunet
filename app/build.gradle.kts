@@ -60,4 +60,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    // D2: 单元测试
+    testImplementation("junit:junit:4.13.2")
 }
