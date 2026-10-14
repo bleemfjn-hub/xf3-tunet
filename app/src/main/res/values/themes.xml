@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 自建高对比度深色主题：不依赖系统深/浅色切换，所有色值硬编码 -->
+    <style name="Theme.XF3Tuner" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#0D1117</item>
+        <item name="colorPrimary">#1F6FEB</item>
+        <item name="colorPrimaryDark">#0D1117</item>
+        <item name="colorAccent">#58A6FF</item>
+        <item name="android:textColorPrimary">#E6EDF3</item>
+        <item name="android:textColorSecondary">#8B949E</item>
+        <item name="android:colorBackground">#0D1117</item>
+        <item name="android:colorForeground">#E6EDF3</item>
+    </style>
+</resources>
