@@ -1,0 +1,17 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hello
+        run: |
+          echo "=== Actions is working ==="
+          uname -a
+          java -version 2>&1 || echo "no java"
+          which sdkmanager || echo "no sdkmanager"
