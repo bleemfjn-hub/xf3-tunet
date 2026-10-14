@@ -11,7 +11,6 @@ import androidx.appcompat.app.AppCompatActivity
 import rikka.shizuku.Shizuku
 import java.io.File
 import java.util.concurrent.Executors
-import java.util.concurrent.SingleThreadExecutor
 
 class MainActivity : AppCompatActivity() {
 
