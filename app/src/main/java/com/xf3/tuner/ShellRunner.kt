@@ -140,8 +140,8 @@ object ShellRunner {
         val escKey = shellSingleQuote(key)
         val escValue = shellSingleQuote(value)
         val cmd = buildString {
-            append("content delete --uri $uri --where \"name=$escKey\" 2>&1; ")
-            append("content insert --uri $uri --bind name:s:$escKey --bind value:s:$escValue 2>&1; ")
+            append("content delete --uri $uri --where \"name=$escKey\"; ")
+            append("content insert --uri $uri --bind name:s:$escKey --bind value:s:$escValue; ")
             append("settings get $namespace $key")
         }
         val res = exec(cmd)
@@ -165,8 +165,8 @@ object ShellRunner {
                 val uri = "content://settings/$namespace"
                 val escKey = shellSingleQuote(key)
                 val escValue = shellSingleQuote(value)
-                append("content delete --uri $uri --where \"name=$escKey\" 2>&1; ")
-                append("content insert --uri $uri --bind name:s:$escKey --bind value:s:$escValue 2>&1; ")
+                append("content delete --uri $uri --where \"name=$escKey\"; ")
+                append("content insert --uri $uri --bind name:s:$escKey --bind value:s:$escValue; ")
                 append("printf '@@%d=%s\\n' $index \"\$(settings get $namespace $key)\"; ")
             }
         }
@@ -208,7 +208,7 @@ object ShellRunner {
         }
         val uri = "content://settings/$namespace"
         val escKey = shellSingleQuote(key)
-        val res = exec("content delete --uri $uri --where \"name=$escKey\" 2>&1")
+        val res = exec("content delete --uri $uri --where \"name=$escKey\"")
         return Result(res.ok, res.stdout + res.stderr)
     }
 
