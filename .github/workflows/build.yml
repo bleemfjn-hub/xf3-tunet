@@ -18,18 +18,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Show Android SDK location
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls -la $ANDROID_HOME || true
-          ls $ANDROID_HOME/platforms || true
-          ls $ANDROID_HOME/build-tools || true
-
       - name: Write local.properties
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          cat local.properties
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -38,16 +29,22 @@ jobs:
         run: |
           gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build_output.txt
 
-      - name: Commit build log
+      - name: Copy APK to repo root
+        if: success()
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk ./xf3-tuner.apk
+          ls -la xf3-tuner.apk
+
+      - name: Commit APK and log
         if: always()
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add build_output.txt || true
-          git commit -m "ci: build log" || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f xf3-tuner.apk build_output.txt || true
+          git commit -m "ci: build artifacts [skip ci]" || true
           git push || true
 
-      - name: Upload APK
+      - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
