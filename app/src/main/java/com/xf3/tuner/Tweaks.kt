@@ -95,7 +95,8 @@ object Tweaks {
                 KeyWrite("global", "animator_duration_scale", "0.5", "1.0"),
                 KeyWrite("global", "transition_animation_scale", "0.5", "1.0"),
                 KeyWrite("global", "window_animation_scale", "0.5", "1.0")
-            )
+            ),
+            defaultOn = false
         ),
         Tweak(
             id = "smarttouch",
