@@ -39,7 +39,10 @@ object ShellRunner {
     /** 单键写入结果。 */
     data class Result(val ok: Boolean, val output: String)
 
-    private const val TIMEOUT_SECONDS = 10L
+    private const val TIMEOUT_SECONDS = 30L
+
+    /** 批量写入分块大小。单条 sh -c 命令过长会导致执行超时或事务中断。 */
+    private const val BATCH_CHUNK = 5
 
     /** namespace 白名单，防止拼接任意 URI。 */
     private val ALLOWED_NAMESPACES = setOf("secure", "system", "global")
@@ -160,33 +163,38 @@ object ShellRunner {
         val valid = writes.filter { it.first in ALLOWED_NAMESPACES }
         if (valid.isEmpty()) return emptyMap()
 
-        val cmd = buildString {
-            valid.forEachIndexed { index, (namespace, key, value) ->
-                val uri = "content://settings/$namespace"
-                val escKey = shellSingleQuote(key)
-                val escValue = shellSingleQuote(value)
-                append("content delete --uri $uri --where \"name=$escKey\"; ")
-                append("content insert --uri $uri --bind name:s:$escKey --bind value:s:$escValue; ")
-                append("printf '@@%d=%s\\n' $index \"\$(settings get $namespace $key)\"; ")
-            }
-        }
-        val res = exec(cmd)
-
-        // 解析：@@<index>=<value>
-        val byIndex = mutableMapOf<Int, String>()
-        for (line in res.stdout.lines()) {
-            val t = line.trim()
-            if (!t.startsWith("@@")) continue
-            val body = t.removePrefix("@@")
-            val idx = body.indexOf('=')
-            if (idx <= 0) continue
-            val i = body.substring(0, idx).toIntOrNull() ?: continue
-            byIndex[i] = body.substring(idx + 1)
-        }
-
         val result = mutableMapOf<String, String?>()
-        valid.forEachIndexed { index, (namespace, key, _) ->
-            result["$namespace/$key"] = byIndex[index]
+
+        // 分块执行：单条 sh -c 里连续执行太多 content 命令会超时或事务中断。
+        // 每块独立创建一个 Shizuku 进程，块内 delete/insert/读回仍在同一进程内完成。
+        valid.chunked(BATCH_CHUNK).forEach { chunk ->
+            val cmd = buildString {
+                chunk.forEachIndexed { index, (namespace, key, value) ->
+                    val uri = "content://settings/$namespace"
+                    val escKey = shellSingleQuote(key)
+                    val escValue = shellSingleQuote(value)
+                    append("content delete --uri $uri --where \"name=$escKey\"; ")
+                    append("content insert --uri $uri --bind name:s:$escKey --bind value:s:$escValue; ")
+                    append("printf '@@%d=%s\\n' $index \"\$(settings get $namespace $key)\"; ")
+                }
+            }
+            val res = exec(cmd)
+            Log.d("XF3Tuner", "putBatch chunk size=${chunk.size} exit=${res.exitCode} timedOut=${res.timedOut} stdout='${res.stdout}' stderr='${res.stderr}'")
+
+            val byIndex = mutableMapOf<Int, String>()
+            for (line in res.stdout.lines()) {
+                val t = line.trim()
+                if (!t.startsWith("@@")) continue
+                val body = t.removePrefix("@@")
+                val idx = body.indexOf('=')
+                if (idx <= 0) continue
+                val i = body.substring(0, idx).toIntOrNull() ?: continue
+                byIndex[i] = body.substring(idx + 1)
+            }
+
+            chunk.forEachIndexed { index, (namespace, key, _) ->
+                result["$namespace/$key"] = byIndex[index]
+            }
         }
         return result
     }
