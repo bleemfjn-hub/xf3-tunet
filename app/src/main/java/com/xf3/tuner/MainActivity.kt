@@ -81,6 +81,7 @@ class MainActivity : AppCompatActivity() {
             val sw = Switch(this)
             sw.text = tweak.title + "\n" + tweak.desc
             sw.textSize = 14f
+            sw.setTextColor(android.graphics.Color.parseColor("#E6EDF3"))
             sw.setPadding(0, 24, 0, 24)
             sw.isChecked = tweak.defaultOn
             sw.setOnCheckedChangeListener { _, isChecked ->
