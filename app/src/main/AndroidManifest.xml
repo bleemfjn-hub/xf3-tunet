@@ -8,7 +8,7 @@
         android:allowBackup="true"
         android:label="XF3 Tuner"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Material3.DayNight.NoActionBar">
+        android:theme="@style/Theme.XF3Tuner">
 
         <activity
             android:name=".MainActivity"
