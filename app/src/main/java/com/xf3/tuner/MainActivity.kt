@@ -1,5 +1,6 @@
 package com.xf3.tuner
 
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -7,9 +8,9 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import rikka.shizuku.Shizuku
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -20,9 +21,6 @@ class MainActivity : AppCompatActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val permissionRequestCode = 1001
-
-    /** 全局写入锁：所有 Settings 写入串行执行，避免多进程并发导致写入丢失。 */
-    private val writeLock = Any()
 
     /** 批量操作期间抑制开关回调，避免递归触发。 */
     @Volatile
@@ -86,7 +84,12 @@ class MainActivity : AppCompatActivity() {
     private fun buildSwitches() {
         for (tweak in Tweaks.ALL) {
             val sw = Switch(this)
-            sw.text = tweak.title + "\n" + tweak.desc
+            val riskTag = when (tweak.risk) {
+                Risk.SAFE -> ""
+                Risk.CAUTION -> " [发热↑]"
+                Risk.RISKY -> " [高风险]"
+            }
+            sw.text = tweak.title + riskTag + "\n" + tweak.desc
             sw.textSize = 14f
             sw.setTextColor(android.graphics.Color.parseColor("#E6EDF3"))
             sw.setPadding(0, 24, 0, 24)
@@ -102,10 +105,13 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * 一键优化 / 全部还原。
-     * 关键：在【单个后台线程】中串行写入所有 tweak，避免并发写 Settings 导致丢失。
+     * 用 putBatch 把全部键合并为【一条】sh -c 命令，只创建一次 Shizuku 进程。
      */
     private fun applyAll(on: Boolean) {
         log("=== ${if (on) "一键优化" else "全部还原"} ===")
+
+        if (on) backupOriginalValues()
+
         suppressCallbacks = true
         for (tweak in Tweaks.ALL) {
             switches[tweak.id]?.isChecked = on
@@ -113,53 +119,85 @@ class MainActivity : AppCompatActivity() {
         suppressCallbacks = false
 
         Thread {
-            synchronized(writeLock) {
-                for (tweak in Tweaks.ALL) {
-                    var success = 0
-                    for (w in tweak.writes) {
-                        val value = if (on) w.onValue else w.offValue
-                        if (value.isEmpty()) continue
-                        val res = ShellRunner.put(w.namespace, w.key, value)
-                        if (res.ok) success++
-                    }
-                    val line = "${tweak.title}: ${if (on) "开启" else "关闭"} ($success/${tweak.writes.size})"
-                    mainHandler.post { log(line) }
+            val batch = mutableListOf<Triple<String, String, String>>()
+            for (tweak in Tweaks.ALL) {
+                for (w in tweak.writes) {
+                    val value = if (on) w.onValue else w.offValue
+                    if (value.isEmpty()) continue
+                    batch.add(Triple(w.namespace, w.key, value))
                 }
-                mainHandler.post { log("=== 完成 ===") }
             }
-        }.start()
-    }
+            val readBacks = ShellRunner.putBatch(batch)
 
-    /** 单项开关：同样走全局锁串行执行。 */
-    private fun applyTweak(tweak: Tweak, on: Boolean) {
-        Thread {
-            synchronized(writeLock) {
+            var totalOk = 0
+            var total = 0
+            for (tweak in Tweaks.ALL) {
                 var success = 0
                 for (w in tweak.writes) {
                     val value = if (on) w.onValue else w.offValue
                     if (value.isEmpty()) continue
-                    val res = ShellRunner.put(w.namespace, w.key, value)
-                    if (res.ok) success++
+                    total++
+                    val rb = readBacks["${w.namespace}/${w.key}"]
+                    if (rb == value) {
+                        success++
+                        totalOk++
+                    }
                 }
-                mainHandler.post {
-                    log("${tweak.title}: ${if (on) "开启" else "关闭"} ($success/${tweak.writes.size})")
-                }
+                val line = "${tweak.title}: ${if (on) "开启" else "关闭"} ($success/${tweak.writes.size})"
+                mainHandler.post { log(line) }
+            }
+            mainHandler.post { log("=== 完成 ($totalOk/$total) ===") }
+        }.start()
+    }
+
+    /** 单项开关：单键走 put，同样在后台线程执行。 */
+    private fun applyTweak(tweak: Tweak, on: Boolean) {
+        Thread {
+            var success = 0
+            for (w in tweak.writes) {
+                val value = if (on) w.onValue else w.offValue
+                if (value.isEmpty()) continue
+                val res = ShellRunner.put(w.namespace, w.key, value)
+                if (res.ok) success++
+            }
+            mainHandler.post {
+                log("${tweak.title}: ${if (on) "开启" else "关闭"} ($success/${tweak.writes.size})")
             }
         }.start()
     }
 
+    /**
+     * 首次操作前备份所有键的原始值到应用私有目录。
+     * 仅当备份文件不存在时写入，避免被优化后的值覆盖。
+     */
+    private fun backupOriginalValues() {
+        try {
+            val file = File(filesDir, "original_values.txt")
+            if (file.exists()) return
+            val sb = StringBuilder()
+            for (tweak in Tweaks.ALL) {
+                for (w in tweak.writes) {
+                    val current = ShellRunner.get(w.namespace, w.key)
+                    sb.append("${w.namespace}/${w.key}=$current\n")
+                }
+            }
+            file.writeText(sb.toString())
+            log("已备份原始值 (${file.absolutePath})")
+        } catch (e: Exception) {
+            log("备份失败: ${e.message}")
+        }
+    }
+
     private fun refreshAllStates() {
         Thread {
-            synchronized(writeLock) {
-                for (tweak in Tweaks.ALL) {
-                    val first = tweak.writes.firstOrNull() ?: continue
-                    val current = ShellRunner.get(first.namespace, first.key)
-                    val isOn = current == first.onValue
-                    mainHandler.post {
-                        suppressCallbacks = true
-                        switches[tweak.id]?.isChecked = isOn
-                        suppressCallbacks = false
-                    }
+            for (tweak in Tweaks.ALL) {
+                val first = tweak.writes.firstOrNull() ?: continue
+                val current = ShellRunner.get(first.namespace, first.key)
+                val isOn = current == first.onValue
+                mainHandler.post {
+                    suppressCallbacks = true
+                    switches[tweak.id]?.isChecked = isOn
+                    suppressCallbacks = false
                 }
             }
             mainHandler.post { log("状态已刷新") }
