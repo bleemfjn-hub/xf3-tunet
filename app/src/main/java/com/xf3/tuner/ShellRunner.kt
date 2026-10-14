@@ -16,18 +16,32 @@ import java.util.concurrent.TimeUnit
  *
  * 关键约束：delete / insert / 读回验证必须在【同一个 shell 进程】内连续执行。
  * 若拆成多次 Shizuku 进程调用，OriginOS 的 SettingsProvider 会因事务隔离导致写入丢失。
- * 因此 put() 把三步合并为一条 sh -c 命令。
  *
  * stdout / stderr 必须并行读取，否则大输出时 stderr 缓冲区填满会导致死锁。
  *
  * Shizuku.newProcess 在 13.x 中为 @RestrictTo 私有方法，
- * 这里通过反射调用，避免编译期可见性问题。
+ * 这里通过反射调用；官方推荐迁移到 UserService，但本场景为一次性 shell 命令，
+ * UserService 需独立进程 + AIDL，成本更高，故保留反射并加异常兜底。
  */
 object ShellRunner {
 
+    /** 命令执行结果。stdout 与 stderr 分离保存。 */
+    data class ExecResult(
+        val exitCode: Int,
+        val stdout: String,
+        val stderr: String,
+        val timedOut: Boolean
+    ) {
+        val ok: Boolean get() = !timedOut && exitCode == 0
+    }
+
+    /** 单键写入结果。 */
     data class Result(val ok: Boolean, val output: String)
 
     private const val TIMEOUT_SECONDS = 10L
+
+    /** namespace 白名单，防止拼接任意 URI。 */
+    private val ALLOWED_NAMESPACES = setOf("secure", "system", "global")
 
     /** 通过反射调用 Shizuku.newProcess，返回 Process 对象。 */
     private fun newShizukuProcess(cmd: Array<String>): Process {
@@ -44,25 +58,27 @@ object ShellRunner {
 
     /**
      * 通过 Shizuku 以 shell 身份执行命令。
-     * stdout / stderr 用独立线程并行读取，避免管道缓冲区死锁；
-     * 整体加超时，防止命令挂死。
+     * stdout / stderr 用独立线程并行读取；超时后强制终止并等待退出。
      */
-    fun exec(cmd: String): Result {
-        return try {
-            val process = newShizukuProcess(arrayOf("sh", "-c", cmd))
+    fun exec(cmd: String): ExecResult {
+        var process: Process? = null
+        try {
+            process = newShizukuProcess(arrayOf("sh", "-c", cmd))
 
             val outBuilder = StringBuilder()
             val errBuilder = StringBuilder()
 
             val outThread = Thread {
-                BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                    outBuilder.append(reader.readText())
-                }
+                try {
+                    BufferedReader(InputStreamReader(process.inputStream)).use { it.readText() }
+                        .let { outBuilder.append(it) }
+                } catch (_: Exception) { }
             }
             val errThread = Thread {
-                BufferedReader(InputStreamReader(process.errorStream)).use { reader ->
-                    errBuilder.append(reader.readText())
-                }
+                try {
+                    BufferedReader(InputStreamReader(process.errorStream)).use { it.readText() }
+                        .let { errBuilder.append(it) }
+                } catch (_: Exception) { }
             }
             outThread.start()
             errThread.start()
@@ -70,72 +86,114 @@ object ShellRunner {
             val finished = process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             if (!finished) {
                 process.destroy()
-                return Result(false, "timeout after ${TIMEOUT_SECONDS}s")
+                try { process.waitFor(2, TimeUnit.SECONDS) } catch (_: Exception) { }
+                process.destroyForcibly()
+                outThread.join(500)
+                errThread.join(500)
+                return ExecResult(-1, outBuilder.toString(), errBuilder.toString(), true)
             }
-            outThread.join(1000)
-            errThread.join(1000)
+            outThread.join(2000)
+            errThread.join(2000)
 
-            Result(process.exitValue() == 0, outBuilder.toString() + errBuilder.toString())
+            return ExecResult(
+                process.exitValue(),
+                outBuilder.toString(),
+                errBuilder.toString(),
+                false
+            )
         } catch (e: Exception) {
-            Result(false, e.message ?: "unknown error")
+            try { process?.destroyForcibly() } catch (_: Exception) { }
+            return ExecResult(-1, "", e.message ?: "unknown error", false)
         }
     }
 
     /**
      * 写入一个 Settings 键。
      * 策略：在【同一个 shell 进程】内执行 delete → insert → 读回验证。
-     * 用 `;` 串联，保证顺序执行；读回值取最后一行。
+     * value 经单引号包裹 + 内部单引号转义，避免 Shell 语法解释。
      */
     fun put(namespace: String, key: String, value: String): Result {
+        if (namespace !in ALLOWED_NAMESPACES) {
+            return Result(false, "invalid namespace: $namespace")
+        }
         val uri = "content://settings/$namespace"
+        val escKey = shellSingleQuote(key)
+        val escValue = shellSingleQuote(value)
         val cmd = buildString {
-            append("content delete --uri $uri --where \"name='$key'\" 2>/dev/null; ")
-            append("content insert --uri $uri --bind name:s:$key --bind value:s:$value 2>/dev/null; ")
+            append("content delete --uri $uri --where \"name=$escKey\" 2>&1; ")
+            append("content insert --uri $uri --bind name:s:$escKey --bind value:s:$escValue 2>&1; ")
             append("settings get $namespace $key")
         }
         val res = exec(cmd)
-        val readBack = res.output.trim().lines().lastOrNull()?.trim() ?: ""
+        val readBack = res.stdout.trim().lines().lastOrNull()?.trim() ?: ""
         val ok = readBack == value
-        return Result(ok, "readBack=$readBack")
+        return Result(ok, "readBack=$readBack stderr=${res.stderr.trim()}")
     }
 
     /**
      * 批量写入：把多个键合并成【一条】sh -c 命令，只创建一次 Shizuku 进程。
-     * 返回每个键的读回值，key 为 "namespace/key"。
+     * 每个键写入后立即读回，用 `@@` 前缀 + 序号标记，避免值中换行破坏解析。
+     * 返回：key("namespace/key") -> 读回值（null 表示未读到）
      */
-    fun putBatch(writes: List<Triple<String, String, String>>): Map<String, String> {
+    fun putBatch(writes: List<Triple<String, String, String>>): Map<String, String?> {
         if (writes.isEmpty()) return emptyMap()
+        val valid = writes.filter { it.first in ALLOWED_NAMESPACES }
+        if (valid.isEmpty()) return emptyMap()
+
         val cmd = buildString {
-            for ((namespace, key, value) in writes) {
+            valid.forEachIndexed { index, (namespace, key, value) ->
                 val uri = "content://settings/$namespace"
-                append("content delete --uri $uri --where \"name='$key'\" 2>/dev/null; ")
-                append("content insert --uri $uri --bind name:s:$key --bind value:s:$value 2>/dev/null; ")
-                append("echo \"@@$namespace/$key=\$(settings get $namespace $key)\"; ")
+                val escKey = shellSingleQuote(key)
+                val escValue = shellSingleQuote(value)
+                append("content delete --uri $uri --where \"name=$escKey\" 2>&1; ")
+                append("content insert --uri $uri --bind name:s:$escKey --bind value:s:$escValue 2>&1; ")
+                append("printf '@@%d=%s\\n' $index \"\$(settings get $namespace $key)\"; ")
             }
         }
         val res = exec(cmd)
-        val result = mutableMapOf<String, String>()
-        for (line in res.output.lines()) {
-            val trimmed = line.trim()
-            if (!trimmed.startsWith("@@")) continue
-            val body = trimmed.removePrefix("@@")
+
+        // 解析：@@<index>=<value>
+        val byIndex = mutableMapOf<Int, String>()
+        for (line in res.stdout.lines()) {
+            val t = line.trim()
+            if (!t.startsWith("@@")) continue
+            val body = t.removePrefix("@@")
             val idx = body.indexOf('=')
             if (idx <= 0) continue
-            result[body.substring(0, idx)] = body.substring(idx + 1).trim()
+            val i = body.substring(0, idx).toIntOrNull() ?: continue
+            byIndex[i] = body.substring(idx + 1)
+        }
+
+        val result = mutableMapOf<String, String?>()
+        valid.forEachIndexed { index, (namespace, key, _) ->
+            result["$namespace/$key"] = byIndex[index]
         }
         return result
     }
 
-    /** 读取一个 Settings 键的当前值。 */
-    fun get(namespace: String, key: String): String {
+    /** 读取一个 Settings 键的当前值。返回 null 表示键不存在。 */
+    fun get(namespace: String, key: String): String? {
+        if (namespace !in ALLOWED_NAMESPACES) return null
         val res = exec("settings get $namespace $key")
-        return res.output.trim().lines().lastOrNull()?.trim() ?: ""
+        val v = res.stdout.trim().lines().lastOrNull()?.trim() ?: ""
+        // settings get 对不存在的键返回字符串 "null"
+        return if (v == "null" || v.isEmpty()) null else v
     }
 
     /** 删除一个 Settings 键。 */
     fun delete(namespace: String, key: String): Result {
+        if (namespace !in ALLOWED_NAMESPACES) {
+            return Result(false, "invalid namespace: $namespace")
+        }
         val uri = "content://settings/$namespace"
-        return exec("content delete --uri $uri --where \"name='$key'\"")
+        val escKey = shellSingleQuote(key)
+        val res = exec("content delete --uri $uri --where \"name=$escKey\" 2>&1")
+        return Result(res.ok, res.stdout + res.stderr)
+    }
+
+    /** 用单引号包裹字符串，内部单引号转义为 '\''。 */
+    private fun shellSingleQuote(s: String): String {
+        return "'" + s.replace("'", "'\\''") + "'"
     }
 
     /** 检查 Shizuku 是否可用。 */
