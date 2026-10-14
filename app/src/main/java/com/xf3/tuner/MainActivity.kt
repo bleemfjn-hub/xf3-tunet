@@ -251,12 +251,50 @@ class MainActivity : AppCompatActivity() {
                     mainHandler.post { log(line) }
                 }
                 mainHandler.post { log("=== 完成 ($totalOk/$total) ===") }
+
+                // C2: 部分失败 → 自动回滚到备份值，避免系统处于混合态
+                if (totalOk < total) {
+                    mainHandler.post { log("⚠ 检测到 $total 项中 $totalOk 项成功，正在回滚...") }
+                    val ok = rollbackFromBackup()
+                    mainHandler.post { log(if (ok) "=== 已回滚到原始状态 ===" else "⚠ 回滚失败，请手动点「全部还原」") }
+                }
             } finally {
                 busy = false
                 // Settings 缓存需要短暂时间落盘，延迟后再读回，避免读到旧值
                 try { Thread.sleep(500) } catch (_: InterruptedException) { }
                 refreshAllStatesInternal()
             }
+        }
+    }
+
+    /**
+     * C2: 从备份文件回滚所有键（不删除键，只恢复值）。
+     * 返回是否全部成功。
+     */
+    private fun rollbackFromBackup(): Boolean {
+        val file = File(filesDir, "original_values.txt")
+        if (!file.exists()) return false
+        return try {
+            val toRestore = mutableListOf<Triple<String, String, String>>()
+            for (line in file.readLines()) {
+                if (line.isBlank()) continue
+                val idx = line.indexOf('=')
+                if (idx <= 0) continue
+                val path = line.substring(0, idx)
+                val value = line.substring(idx + 1)
+                val slash = path.indexOf('/')
+                if (slash <= 0) continue
+                val ns = path.substring(0, slash)
+                val k = path.substring(slash + 1)
+                if (value == "__ABSENT__") continue  // 原本不存在的不回写
+                toRestore.add(Triple(ns, k, value))
+            }
+            if (toRestore.isEmpty()) return false
+            val readBacks = ShellRunner.putBatch(toRestore)
+            toRestore.all { (ns, k, v) -> readBacks["$ns/$k"] == v }
+        } catch (e: Exception) {
+            mainHandler.post { log("回滚异常: ${e.message}") }
+            false
         }
     }
 
