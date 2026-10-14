@@ -3,6 +3,7 @@ package com.xf3.tuner
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.method.ScrollingMovementMethod
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Switch
@@ -416,6 +417,10 @@ class MainActivity : AppCompatActivity() {
     private fun log(msg: String) {
         runOnUiThread {
             logView.append(msg + "\n")
+            // B4: 自动滚到底部
+            (logView.parent as? android.widget.ScrollView)?.post {
+                (logView.parent as? android.widget.ScrollView)?.fullScroll(View.FOCUS_DOWN)
+            }
         }
     }
 }
