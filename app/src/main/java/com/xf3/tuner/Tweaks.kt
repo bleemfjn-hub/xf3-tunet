@@ -88,6 +88,14 @@ object Tweaks {
             risk = Risk.CAUTION
         ),
         Tweak(
+            id = "freezer",
+            title = "墓碑机制 (后台冻结)",
+            desc = "冻结后台缓存进程，省电省内存，唤醒秒恢复",
+            writes = listOf(
+                KeyWrite("global", "cached_apps_freezer", "enabled", "device_default")
+            )
+        ),
+        Tweak(
             id = "anim",
             title = "动画缩放 0.5x",
             desc = "动画变快，操作更利落",
