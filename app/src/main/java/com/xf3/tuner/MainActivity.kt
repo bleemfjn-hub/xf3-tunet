@@ -364,12 +364,21 @@ class MainActivity : AppCompatActivity() {
      */
     private fun backupOriginalValues(): Boolean {
         val file = File(filesDir, "original_values.txt")
-        if (file.exists()) return true
+        // A5: 若备份已存在且内容有效（至少有一个非 __ABSENT__ 值），则复用
+        if (file.exists()) {
+            val existing = runCatching { file.readText() }.getOrDefault("")
+            val hasReal = existing.lines().any { it.contains('=') && !it.endsWith("__ABSENT__") }
+            if (hasReal) return true
+            // 备份无效（全为 __ABSENT__）→ 删除后重建
+            file.delete()
+        }
         return try {
+            val allKeys = Tweaks.ALL.flatMap { t -> t.writes.map { it.namespace to it.key } }
+            val values = ShellRunner.getBatch(allKeys)
             val sb = StringBuilder()
             for (tweak in Tweaks.ALL) {
                 for (w in tweak.writes) {
-                    val current = ShellRunner.get(w.namespace, w.key)
+                    val current = values["${w.namespace}/${w.key}"]
                     sb.append("${w.namespace}/${w.key}=").append(current ?: "__ABSENT__").append("\n")
                 }
             }
