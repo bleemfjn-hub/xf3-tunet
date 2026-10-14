@@ -8,9 +8,12 @@ import java.io.InputStreamReader
 /**
  * 核心写入器。
  *
- * 关键：OriginOS 会拦截 shell 的 `settings put` 命令，
- * 但 `content insert/update/delete` 走 ContentProvider binder，可以写入。
- * 所以所有写操作都通过 content 命令完成。
+ * 实测结论（vivo X Fold3 / OriginOS 16.2）：
+ * - `settings put`        → 被拦截，无效
+ * - `content update`      → 被拦截，静默失败（返回 0 但值不变）
+ * - `content delete`+`content insert` → 有效
+ *
+ * 因此所有写操作统一走 delete + insert。
  *
  * Shizuku.newProcess 在 13.x 中为 @RestrictTo 私有方法，
  * 这里通过反射调用，避免编译期可见性问题。
@@ -45,18 +48,23 @@ object ShellRunner {
         }
     }
 
-    /** 写入一个 Settings 键（自动处理 insert / update）。 */
+    /**
+     * 写入一个 Settings 键。
+     * 策略：先 delete（忽略结果），再 insert。
+     * 写入后用 settings get 读回验证，只有读回值与目标一致才算成功。
+     */
     fun put(namespace: String, key: String, value: String): Result {
         val uri = "content://settings/$namespace"
-        // 先尝试 update（键已存在时）
-        val updateCmd = "content update --uri $uri --bind value:s:'$value' --where \"name='$key'\""
-        val updateRes = exec(updateCmd)
-        if (updateRes.ok && !updateRes.output.contains("Updated 0 rows")) {
-            return updateRes
-        }
-        // update 没改到行，说明键不存在，改用 insert
-        val insertCmd = "content insert --uri $uri --bind name:s:'$key' --bind value:s:'$value'"
-        return exec(insertCmd)
+        // 1. 删除旧值（键不存在时静默失败，无所谓）
+        exec("content delete --uri $uri --where \"name='$key'\"")
+        // 2. 插入新值
+        val insertRes = exec(
+            "content insert --uri $uri --bind name:s:$key --bind value:s:$value"
+        )
+        // 3. 读回验证
+        val readBack = get(namespace, key)
+        val ok = readBack == value
+        return Result(ok, "insert=${insertRes.output.trim()} readBack=$readBack")
     }
 
     /** 读取一个 Settings 键的当前值。 */
