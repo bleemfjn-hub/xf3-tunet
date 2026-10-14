@@ -168,15 +168,17 @@ class MainActivity : AppCompatActivity() {
                 var total = 0
                 for (tweak in targets) {
                     var success = 0
+                    var expected = 0
                     for (w in tweak.writes) {
                         if (w.onValue.isEmpty()) continue
+                        expected++
                         total++
                         if (readBacks["${w.namespace}/${w.key}"] == w.onValue) {
                             success++
                             totalOk++
                         }
                     }
-                    val line = "${tweak.title}: ($success/${tweak.writes.size})"
+                    val line = "${tweak.title}: ($success/$expected)"
                     mainHandler.post { log(line) }
                 }
                 mainHandler.post { log("=== 完成 ($totalOk/$total) ===") }
@@ -336,10 +338,9 @@ class MainActivity : AppCompatActivity() {
                 for (w in tweak.writes) {
                     val current = ShellRunner.get(w.namespace, w.key)
                     validCount++
-                    when (current) {
-                        w.onValue -> onCount++
-                        w.offValue -> offCount++
-                    }
+                    if (current == w.onValue) onCount++
+                    // offValue 为空的键（如 sys_uidcpupower）不参与 off 判定
+                    if (w.offValue.isNotEmpty() && current == w.offValue) offCount++
                 }
                 val state = when {
                     validCount == 0 -> 0
