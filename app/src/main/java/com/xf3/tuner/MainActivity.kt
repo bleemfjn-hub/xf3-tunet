@@ -403,12 +403,15 @@ class MainActivity : AppCompatActivity() {
     /** 实际刷新逻辑。只能从 executor 线程内调用，禁止再向 executor 提交任务（会死锁）。 */
     private fun refreshAllStatesInternal() {
         run {
+            // B1: 一次性读取所有键（分块合并为少量 shell 进程），替代逐键读取
+            val allKeys = Tweaks.ALL.flatMap { t -> t.writes.map { it.namespace to it.key } }
+            val values = ShellRunner.getBatch(allKeys)
             for (tweak in Tweaks.ALL) {
                 var onCount = 0
                 var offCount = 0
                 var validCount = 0
                 for (w in tweak.writes) {
-                    val current = ShellRunner.get(w.namespace, w.key)
+                    val current = values["${w.namespace}/${w.key}"]
                     validCount++
                     if (current == w.onValue) onCount++
                     // 键不存在（null）视为「关」；offValue 为空的键不参与 off 判定
