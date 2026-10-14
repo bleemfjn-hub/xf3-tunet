@@ -175,7 +175,7 @@ object ShellRunner {
                     val escValue = shellSingleQuote(value)
                     append("content delete --uri $uri --where \"name=$escKey\"; ")
                     append("content insert --uri $uri --bind name:s:$escKey --bind value:s:$escValue; ")
-                    append("printf '@@%d=%s\\n' $index \"\$(settings get $namespace $key)\"; ")
+                    append("echo \"@@$index=\$(settings get $namespace $key)\"; ")
                 }
             }
             val res = exec(cmd)
