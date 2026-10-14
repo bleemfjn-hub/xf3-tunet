@@ -84,20 +84,38 @@ object ShellRunner {
             outThread.start()
             errThread.start()
 
-            val finished = process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            if (!finished) {
-                process.destroy()
-                try { process.waitFor(2, TimeUnit.SECONDS) } catch (_: Exception) { }
-                process.destroyForcibly()
+            // ShizukuRemoteProcess.exitValue() 在进程未退出时抛 IllegalArgumentException
+            // （而非标准 IllegalThreadStateException），因此不能用 Process.waitFor(timeout)。
+            // 这里手动轮询 exitValue()，捕获 IllegalArgumentException 视为「仍在运行」。
+            val deadline = System.currentTimeMillis() + TIMEOUT_SECONDS * 1000
+            var exitCode = -1
+            var exited = false
+            while (System.currentTimeMillis() < deadline) {
+                try {
+                    exitCode = process.exitValue()
+                    exited = true
+                    break
+                } catch (e: IllegalArgumentException) {
+                    Thread.sleep(20)
+                } catch (e: IllegalThreadStateException) {
+                    Thread.sleep(20)
+                }
+            }
+
+            if (!exited) {
+                try { process.destroy() } catch (_: Exception) { }
+                try { Thread.sleep(200) } catch (_: Exception) { }
+                try { process.destroyForcibly() } catch (_: Exception) { }
                 outThread.join(500)
                 errThread.join(500)
                 return ExecResult(-1, outBuilder.toString(), errBuilder.toString(), true)
             }
+
             outThread.join(2000)
             errThread.join(2000)
 
             return ExecResult(
-                process.exitValue(),
+                exitCode,
                 outBuilder.toString(),
                 errBuilder.toString(),
                 false
