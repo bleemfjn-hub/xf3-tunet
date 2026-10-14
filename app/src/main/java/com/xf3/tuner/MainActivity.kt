@@ -31,6 +31,29 @@ class MainActivity : AppCompatActivity() {
     @Volatile
     private var busy = false
 
+    /** busy 起始时间戳，用于超时保护（C4）。 */
+    @Volatile
+    private var busySince = 0L
+
+    /** busy 超时上限（毫秒）：超过则视为卡死，允许新操作。 */
+    private val BUSY_TIMEOUT_MS = 90_000L
+
+    /** C4: 标记进入 busy，并记录时间。 */
+    private fun markBusy() {
+        busy = true
+        busySince = System.currentTimeMillis()
+    }
+
+    /** C4: 判断当前是否真的处于 busy（带超时自愈）。 */
+    private fun isBusyNow(): Boolean {
+        if (!busy) return false
+        if (System.currentTimeMillis() - busySince > BUSY_TIMEOUT_MS) {
+            busy = false
+            return false
+        }
+        return true
+    }
+
     /** 抑制开关回调（批量设置 UI 状态时使用）。 */
     @Volatile
     private var suppressCallbacks = false
@@ -180,7 +203,7 @@ class MainActivity : AppCompatActivity() {
      * 先备份原始值，再批量写入，最后逐项报告。
      */
     private fun applyAll(on: Boolean) {
-        if (busy) { log("操作进行中，请稍候"); return }
+        if (isBusyNow()) { log("操作进行中，请稍候"); return }
         val block = checkEnvironmentBlocking()
         if (block != null) { log("⚠ 已阻止: $block"); return }
 
@@ -244,7 +267,7 @@ class MainActivity : AppCompatActivity() {
      * 不使用 offValue。
      */
     private fun revertAll() {
-        if (busy) { log("操作进行中，请稍候"); return }
+        if (isBusyNow()) { log("操作进行中，请稍候"); return }
         val block = checkEnvironmentBlocking()
         if (block != null) { log("⚠ 已阻止: $block"); return }
 
@@ -307,7 +330,7 @@ class MainActivity : AppCompatActivity() {
     // ---------- 单项开关 ----------
 
     private fun applyTweak(tweak: Tweak, on: Boolean) {
-        if (busy) { log("操作进行中，请稍候"); return }
+        if (isBusyNow()) { log("操作进行中，请稍候"); return }
         val block = checkEnvironmentBlocking()
         if (block != null) { log("⚠ 已阻止: $block"); return }
 
