@@ -65,11 +65,21 @@
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
+        <Button
+            android:id="@+id/btnClearLog"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="20dp"
+            android:backgroundTint="#30363D"
+            android:text="清空日志"
+            android:textColor="#E6EDF3"
+            android:textSize="14sp" />
+
         <TextView
             android:id="@+id/logView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="10dp"
             android:textColor="#7EE787"
             android:textSize="12sp"
             android:fontFamily="monospace" />
