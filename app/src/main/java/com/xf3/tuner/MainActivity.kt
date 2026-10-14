@@ -69,7 +69,12 @@ class MainActivity : AppCompatActivity() {
         logView = findViewById(R.id.logView)
         deviceStatus = findViewById(R.id.deviceStatus)
 
+        // B4: 日志可滚动并自动滚到底
+        logView.movementMethod = ScrollingMovementMethod()
+
         Shizuku.addRequestPermissionResultListener(permissionListener)
+        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
+        Shizuku.addBinderDeadListener(binderDeadListener)
 
         buildSwitches()
 
