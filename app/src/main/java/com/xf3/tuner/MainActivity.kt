@@ -62,10 +62,24 @@ class MainActivity : AppCompatActivity() {
         checkEnvironment()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // A1/A2: 切回前台时重新读取状态，反映系统回写
+        if (firstResumeDone && !busy && Shizuku.pingBinder()) {
+            refreshAllStates()
+        }
+        firstResumeDone = true
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         Shizuku.removeRequestPermissionResultListener(permissionListener)
-        executor.shutdown()
+        Shizuku.removeBinderReceivedListener(binderReceivedListener)
+        Shizuku.removeBinderDeadListener(binderDeadListener)
+        // C3: 仅在真正结束时关闭 executor（旋转屏幕重建时不关）
+        if (isFinishing) {
+            executor.shutdownNow()
+        }
     }
 
     // ---------- 环境检查 ----------
