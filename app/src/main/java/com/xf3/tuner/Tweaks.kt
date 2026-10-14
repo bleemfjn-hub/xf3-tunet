@@ -2,16 +2,31 @@ package com.xf3.tuner
 
 /**
  * 每项优化 = 一组 Settings 键的写入。
- * 所有键都经过实测，在 vivo X Fold3 (V2303A / OriginOS 16.2) 上真实有效。
+ *
+ * 所有键均在 vivo X Fold3 (V2303A / OriginOS 16.2) 上通过
+ * `settings list secure|system|global` 实测确认真实存在。
+ *
+ * 风险等级：
+ * - SAFE    仅影响体验，可随时还原
+ * - CAUTION 影响功耗/发热，建议按需开启
+ * - RISKY   可能影响系统稳定性，默认关闭
  */
-data class KeyWrite(val namespace: String, val key: String, val onValue: String, val offValue: String)
+data class KeyWrite(
+    val namespace: String,
+    val key: String,
+    val onValue: String,
+    val offValue: String
+)
+
+enum class Risk { SAFE, CAUTION, RISKY }
 
 data class Tweak(
     val id: String,
     val title: String,
     val desc: String,
     val writes: List<KeyWrite>,
-    val defaultOn: Boolean = true
+    val defaultOn: Boolean = true,
+    val risk: Risk = Risk.SAFE
 )
 
 object Tweaks {
@@ -45,7 +60,8 @@ object Tweaks {
                 KeyWrite("system", "thermal_manager_enabled", "0", "1"),
                 KeyWrite("global", "thermal_control_disabled", "1", "0"),
                 KeyWrite("global", "vivo_thermal_policy", "0", "1")
-            )
+            ),
+            risk = Risk.CAUTION
         ),
         Tweak(
             id = "perf",
@@ -55,7 +71,8 @@ object Tweaks {
                 KeyWrite("system", "power_save_type_performance", "1", "0"),
                 KeyWrite("global", "sys_uidcpupower", "Deadline", ""),
                 KeyWrite("global", "GPUTUNER_SWITCH", "true", "false")
-            )
+            ),
+            risk = Risk.CAUTION
         ),
         Tweak(
             id = "touch",
@@ -67,7 +84,8 @@ object Tweaks {
                 KeyWrite("global", "debug.sf.enable_gl_backpressure", "1", "0"),
                 KeyWrite("global", "debug.cpurend.vsync", "false", "true"),
                 KeyWrite("global", "hwui.disable_vsync", "true", "false")
-            )
+            ),
+            risk = Risk.CAUTION
         ),
         Tweak(
             id = "anim",
@@ -112,7 +130,8 @@ object Tweaks {
             writes = listOf(
                 KeyWrite("system", "gamecube_frame_interpolation", "1:1:0:72:144", "0:-1:0:0:0")
             ),
-            defaultOn = false
+            defaultOn = false,
+            risk = Risk.RISKY
         ),
         Tweak(
             id = "charge",
@@ -121,7 +140,8 @@ object Tweaks {
             writes = listOf(
                 KeyWrite("secure", "vivo_keyguard_super_speed_charge_switch", "1", "-1")
             ),
-            defaultOn = false
+            defaultOn = false,
+            risk = Risk.RISKY
         )
     )
 }
