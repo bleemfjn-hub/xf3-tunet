@@ -21,6 +21,13 @@ class MainActivity : AppCompatActivity() {
 
     private val permissionRequestCode = 1001
 
+    /** 全局写入锁：所有 Settings 写入串行执行，避免多进程并发导致写入丢失。 */
+    private val writeLock = Any()
+
+    /** 批量操作期间抑制开关回调，避免递归触发。 */
+    @Volatile
+    private var suppressCallbacks = false
+
     private val permissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == permissionRequestCode) {
             if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -85,6 +92,7 @@ class MainActivity : AppCompatActivity() {
             sw.setPadding(0, 24, 0, 24)
             sw.isChecked = tweak.defaultOn
             sw.setOnCheckedChangeListener { _, isChecked ->
+                if (suppressCallbacks) return@setOnCheckedChangeListener
                 applyTweak(tweak, isChecked)
             }
             container.addView(sw)
@@ -92,36 +100,66 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 一键优化 / 全部还原。
+     * 关键：在【单个后台线程】中串行写入所有 tweak，避免并发写 Settings 导致丢失。
+     */
     private fun applyAll(on: Boolean) {
         log("=== ${if (on) "一键优化" else "全部还原"} ===")
+        suppressCallbacks = true
         for (tweak in Tweaks.ALL) {
             switches[tweak.id]?.isChecked = on
         }
+        suppressCallbacks = false
+
+        Thread {
+            synchronized(writeLock) {
+                for (tweak in Tweaks.ALL) {
+                    var success = 0
+                    for (w in tweak.writes) {
+                        val value = if (on) w.onValue else w.offValue
+                        if (value.isEmpty()) continue
+                        val res = ShellRunner.put(w.namespace, w.key, value)
+                        if (res.ok) success++
+                    }
+                    val line = "${tweak.title}: ${if (on) "开启" else "关闭"} ($success/${tweak.writes.size})"
+                    mainHandler.post { log(line) }
+                }
+                mainHandler.post { log("=== 完成 ===") }
+            }
+        }.start()
     }
 
+    /** 单项开关：同样走全局锁串行执行。 */
     private fun applyTweak(tweak: Tweak, on: Boolean) {
         Thread {
-            var success = 0
-            for (w in tweak.writes) {
-                val value = if (on) w.onValue else w.offValue
-                if (value.isEmpty()) continue
-                val res = ShellRunner.put(w.namespace, w.key, value)
-                if (res.ok) success++
-            }
-            mainHandler.post {
-                log("${tweak.title}: ${if (on) "开启" else "关闭"} ($success/${tweak.writes.size})")
+            synchronized(writeLock) {
+                var success = 0
+                for (w in tweak.writes) {
+                    val value = if (on) w.onValue else w.offValue
+                    if (value.isEmpty()) continue
+                    val res = ShellRunner.put(w.namespace, w.key, value)
+                    if (res.ok) success++
+                }
+                mainHandler.post {
+                    log("${tweak.title}: ${if (on) "开启" else "关闭"} ($success/${tweak.writes.size})")
+                }
             }
         }.start()
     }
 
     private fun refreshAllStates() {
         Thread {
-            for (tweak in Tweaks.ALL) {
-                val first = tweak.writes.firstOrNull() ?: continue
-                val current = ShellRunner.get(first.namespace, first.key)
-                val isOn = current == first.onValue
-                mainHandler.post {
-                    switches[tweak.id]?.isChecked = isOn
+            synchronized(writeLock) {
+                for (tweak in Tweaks.ALL) {
+                    val first = tweak.writes.firstOrNull() ?: continue
+                    val current = ShellRunner.get(first.namespace, first.key)
+                    val isOn = current == first.onValue
+                    mainHandler.post {
+                        suppressCallbacks = true
+                        switches[tweak.id]?.isChecked = isOn
+                        suppressCallbacks = false
+                    }
                 }
             }
             mainHandler.post { log("状态已刷新") }
