@@ -33,6 +33,23 @@ class MainActivity : AppCompatActivity() {
     @Volatile
     private var suppressCallbacks = false
 
+    /** 是否已首次刷新过（避免 onResume 重复刷新打断操作）。 */
+    @Volatile
+    private var firstResumeDone = false
+
+    /** Shizuku 服务恢复监听（C1）。 */
+    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
+        mainHandler.post {
+            log("Shizuku 服务已连接")
+            if (!busy) refreshAllStates()
+        }
+    }
+
+    /** Shizuku 服务断开监听（C1）。 */
+    private val binderDeadListener = Shizuku.OnBinderDeadListener {
+        mainHandler.post { log("⚠ Shizuku 服务已断开，请重新启动 Shizuku") }
+    }
+
     private val permissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == permissionRequestCode) {
             if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
