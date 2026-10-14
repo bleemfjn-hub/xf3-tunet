@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -23,7 +25,7 @@ jobs:
 
       - name: Install SDK components
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -5
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -32,9 +34,23 @@ jobs:
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        id: build
+        continue-on-error: true
+        run: |
+          gradle assembleDebug --no-daemon --stacktrace > build_log.txt 2>&1
+          echo "exit_code=$?" >> build_log.txt
+          tail -100 build_log.txt
+
+      - name: Commit build log
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add build_log.txt
+          git commit -m "ci: build log [skip ci]" || true
+          git push || true
 
       - name: Upload APK
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: XF3Tuner-debug
